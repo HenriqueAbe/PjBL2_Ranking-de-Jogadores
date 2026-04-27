@@ -16,7 +16,6 @@ import javafx.scene.paint.Color;
 import javafx.stage.Stage;
 
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -26,213 +25,208 @@ public class TreeVisualizer extends Application {
     private ArvoreBinariaBusca arvore = new ArvoreBinariaBusca();
     private Canvas canvas;
     private ScrollPane scrollPane;
+    private Label statsLabel;
 
     @Override
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Ranking de Jogadores - ABB");
-
         loadCSV("players.csv");
 
         canvas = new Canvas(1200, 800);
+        statsLabel = styledLabel("");
+        updateStats();
         redrawTree();
 
         scrollPane = new ScrollPane(new Group(canvas));
         scrollPane.setPrefSize(1200, 600);
         scrollPane.setStyle("-fx-background: #1a1a2e;");
 
-        VBox root = new VBox(10);
-        root.setPadding(new Insets(15));
-        root.setStyle("-fx-background-color: #1a1a2e;");
+        VBox rootLayout = new VBox(10);
+        rootLayout.setPadding(new Insets(15));
+        rootLayout.setStyle("-fx-background-color: #1a1a2e;");
 
         Label title = new Label("Ranking de Jogadores");
         title.setStyle("-fx-font-size: 22px; -fx-font-weight: bold; -fx-text-fill: #e0e0ff;");
 
-        HBox insertBox = buildInsertBox();
-        HBox searchBox = buildSearchBox();
-        HBox removeBox = buildRemoveBox();
+        HBox controls = new HBox(15, buildInsertBox(), buildSearchBox(), buildRemoveBox(), buildUpdateBox(), buildRankingBox());
+        controls.setAlignment(Pos.CENTER_LEFT);
 
-        root.getChildren().addAll(title, insertBox, searchBox, removeBox, scrollPane);
+        rootLayout.getChildren().addAll(title, statsLabel, controls, scrollPane);
 
-        Scene scene = new Scene(root, 1200, 750);
+        Scene scene = new Scene(rootLayout, 1250, 750);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
 
-    private HBox buildInsertBox() {
+    private void updateStats() {
+        int total = arvore.getTotalPlayers();
+        Player maior = arvore.buscarMaiorRanking();
+        String texto = "Total de Jogadores: " + total;
+        if (maior != null) {
+            texto += " | Melhor Player: " + maior.getNickname() + " (" + maior.getRanking() + ")";
+        }
+        statsLabel.setText(texto);
+    }
+
+    private VBox buildInsertBox() {
         TextField nickField = styledField("Nickname");
         TextField rankField = styledField("Ranking");
         Button btn = styledButton("Inserir", "#4CAF50");
-        Label result = styledLabel();
-
         btn.setOnAction(e -> {
-            String nick = nickField.getText().trim();
-            String rankStr = rankField.getText().trim();
-            if (nick.isEmpty() || rankStr.isEmpty()) {
-                result.setText("Preencha os dois campos.");
-                return;
-            }
             try {
-                int rank = Integer.parseInt(rankStr);
-                arvore.insert(new Player(nick, rank));
-                redrawTree();
-                result.setText("Jogador inserido!");
-                nickField.clear();
-                rankField.clear();
-            } catch (NumberFormatException ex) {
-                result.setText("Ranking deve ser um numero.");
+                String nick = nickField.getText();
+                int rank = Integer.parseInt(rankField.getText());
+                if (arvore.existeRanking(rank)) {
+                    showAlert("Ja existe um jogador cadastrado com o ranking: " + rank);
+                } else {
+                    arvore.insert(new Player(nick, rank));
+                    redrawTree();
+                    updateStats();
+                    nickField.clear();
+                    rankField.clear();
+                }
+            } catch (Exception ex) {
+                showAlert("Entrada invalida.");
             }
         });
-
-        HBox box = new HBox(8, styledLabel("Inserir:"), nickField, rankField, btn, result);
-        box.setAlignment(Pos.CENTER_LEFT);
-        return box;
+        return new VBox(5, styledLabel("Inserir:"), nickField, rankField, btn);
     }
 
-    private HBox buildSearchBox() {
+    private VBox buildSearchBox() {
         TextField nickField = styledField("Nickname");
         Button btn = styledButton("Buscar", "#2196F3");
-        Label result = styledLabel();
-
+        Label res = styledLabel("");
         btn.setOnAction(e -> {
-            String nick = nickField.getText().trim();
-            if (nick.isEmpty()) { result.setText("Informe o nickname."); return; }
-            boolean found = arvore.search(nick);
-            result.setText(found ? "Jogador encontrado!" : "Jogador nao encontrado.");
-            nickField.clear();
+            String name = nickField.getText();
+            if (arvore.search(name)) {
+                int depth = arvore.getDepth(name);
+                int height = arvore.getNodeHeight(name);
+                res.setText("Localizado!\nProfundidade: " + depth + " | Altura: " + height);
+            } else {
+                res.setText("Nao encontrado.");
+            }
         });
-
-        HBox box = new HBox(8, styledLabel("Buscar:"), nickField, btn, result);
-        box.setAlignment(Pos.CENTER_LEFT);
-        return box;
+        return new VBox(5, styledLabel("Buscar:"), nickField, btn, res);
     }
 
-    private HBox buildRemoveBox() {
+    private VBox buildUpdateBox() {
+        TextField nickField = styledField("Nickname");
+        TextField newRankField = styledField("Novo Ranking");
+        Button btn = styledButton("Atualizar", "#FF9800");
+        btn.setOnAction(e -> {
+            try {
+                String nick = nickField.getText();
+                int newRank = Integer.parseInt(newRankField.getText());
+                if (!arvore.search(nick)) {
+                    showAlert("Jogador nao encontrado.");
+                } else if (arvore.existeRanking(newRank)) {
+                    showAlert("Este ranking ja esta ocupado.");
+                } else {
+                    arvore.atualizarRanking(nick, newRank);
+                    redrawTree();
+                    updateStats();
+                    nickField.clear();
+                    newRankField.clear();
+                }
+            } catch (Exception ex) {
+                showAlert("Entrada invalida.");
+            }
+        });
+        return new VBox(5, styledLabel("Atualizar Rank:"), nickField, newRankField, btn);
+    }
+
+    private VBox buildRemoveBox() {
         TextField nickField = styledField("Nickname");
         Button btn = styledButton("Remover", "#f44336");
-        Label result = styledLabel();
-
         btn.setOnAction(e -> {
-            String nick = nickField.getText().trim();
-            if (nick.isEmpty()) { result.setText("Informe o nickname."); return; }
-            Player removed = arvore.remove(nick);
-            if (removed != null) {
-                redrawTree();
-                result.setText("Removido: " + removed.getNickname() + " (rank " + removed.getRanking() + ")");
-            } else {
-                result.setText("Jogador nao encontrado.");
-            }
+            arvore.remove(nickField.getText());
+            redrawTree();
+            updateStats();
             nickField.clear();
         });
+        return new VBox(5, styledLabel("Remover:"), nickField, btn);
+    }
 
-        HBox box = new HBox(8, styledLabel("Remover:"), nickField, btn, result);
-        box.setAlignment(Pos.CENTER_LEFT);
-        return box;
+    private VBox buildRankingBox() {
+        Button btn = styledButton("Ver Ranking", "#9c27b0");
+        btn.setOnAction(e -> {
+            Lista ranking = arvore.gerarRankingList();
+            ranking.printRanking();
+        });
+        return new VBox(5, styledLabel("Console:"), btn);
     }
 
     private void loadCSV(String path) {
-        try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(path), StandardCharsets.UTF_8))) {
             String line;
-            boolean first = true;
+            br.readLine();
             while ((line = br.readLine()) != null) {
-                line = line.replace("\r", "").trim();
-                if (line.isEmpty()) continue;
-                if (first) { first = false; continue; }
                 String[] parts = line.split(",");
                 if (parts.length >= 2) {
-                    String nick = parts[0].trim();
-                    int rank = Integer.parseInt(parts[1].trim());
-                    arvore.insert(new Player(nick, rank));
+                    arvore.insert(new Player(parts[0].trim(), Integer.parseInt(parts[1].trim())));
                 }
             }
         } catch (Exception e) {
-            showAlert("Erro ao ler o arquivo: " + e.getMessage());
+            System.out.println("Erro CSV: " + e.getMessage());
         }
     }
 
     private void redrawTree() {
-        int height = arvore.getHeight();
-        double canvasHeight = Math.max(800, 100 + height * 120.0);
-        double canvasWidth = Math.max(1200, Math.pow(2, height) * 50.0);
-
+        double canvasWidth = Math.max(1200, Math.pow(2, arvore.getHeight()) * 40);
         canvas.setWidth(canvasWidth);
-        canvas.setHeight(canvasHeight);
-
         GraphicsContext gc = canvas.getGraphicsContext2D();
-        gc.clearRect(0, 0, canvasWidth, canvasHeight);
-
         gc.setFill(Color.web("#1a1a2e"));
-        gc.fillRect(0, 0, canvasWidth, canvasHeight);
-
-        if (arvore.root != null) {
-            drawNode(gc, arvore.root, canvasWidth / 2, 50, canvasWidth / 4, 1);
-        }
+        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        if (arvore.root != null) drawNode(gc, arvore.root, canvasWidth / 2, 50, canvasWidth / 4);
     }
 
-    private void drawNode(GraphicsContext gc, Node node, double x, double y, double xOffset, int level) {
+    private void drawNode(GraphicsContext gc, Node node, double x, double y, double xOffset) {
         if (node == null) return;
-
-        double radius = 22;
-
+        double r = 20;
+        gc.setStroke(Color.web("#7c83d0"));
         if (node.left != null) {
-            double nx = x - xOffset;
-            double ny = y + 120;
-            gc.setStroke(Color.web("#7c83d0"));
-            gc.setLineWidth(1.5);
-            gc.strokeLine(x, y + radius, nx, ny - radius);
-            drawNode(gc, node.left, nx, ny, xOffset / 2, level + 1);
+            gc.strokeLine(x, y, x - xOffset, y + 80);
+            drawNode(gc, node.left, x - xOffset, y + 80, xOffset / 2);
         }
-
         if (node.right != null) {
-            double nx = x + xOffset;
-            double ny = y + 120;
-            gc.setStroke(Color.web("#7c83d0"));
-            gc.setLineWidth(1.5);
-            gc.strokeLine(x, y + radius, nx, ny - radius);
-            drawNode(gc, node.right, nx, ny, xOffset / 2, level + 1);
+            gc.strokeLine(x, y, x + xOffset, y + 80);
+            drawNode(gc, node.right, x + xOffset, y + 80, xOffset / 2);
         }
-
         gc.setFill(Color.web("#16213e"));
-        gc.fillOval(x - radius, y - radius, radius * 2, radius * 2);
+        gc.fillOval(x - r, y - r, r * 2, r * 2);
         gc.setStroke(Color.web("#e94560"));
-        gc.setLineWidth(2);
-        gc.strokeOval(x - radius, y - radius, radius * 2, radius * 2);
-
-        String nick = node.player.getNickname();
-        gc.setFill(Color.web("#e0e0ff"));
-        gc.setFont(javafx.scene.text.Font.font("Monospace", 9));
-
-        double textX = x - (nick.length() * 3.2);
-        gc.fillText(nick, textX, y + 4);
+        gc.strokeOval(x - r, y - r, r * 2, r * 2);
+        gc.setFill(Color.WHITE);
+        gc.setFont(javafx.scene.text.Font.font(10));
+        gc.fillText(node.player.getNickname(), x - 15, y + 5);
     }
 
-    private TextField styledField(String prompt) {
+    private TextField styledField(String p) {
         TextField tf = new TextField();
-        tf.setPromptText(prompt);
-        tf.setPrefWidth(150);
-        tf.setStyle("-fx-background-color: #16213e; -fx-text-fill: #e0e0ff; -fx-prompt-text-fill: #888; -fx-border-color: #7c83d0; -fx-border-radius: 4;");
+        tf.setPromptText(p);
+        tf.setStyle("-fx-background-color: #16213e; -fx-text-fill: white; -fx-border-color: #7c83d0;");
         return tf;
     }
 
-    private Button styledButton(String text, String color) {
-        Button btn = new Button(text);
-        btn.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-font-weight: bold; -fx-border-radius: 4; -fx-background-radius: 4;");
-        return btn;
+    private Button styledButton(String t, String c) {
+        Button b = new Button(t);
+        b.setStyle("-fx-background-color: " + c + "; -fx-text-fill: white; -fx-cursor: hand;");
+        return b;
     }
 
-    private Label styledLabel(String... text) {
-        Label l = new Label(text.length > 0 ? text[0] : "");
-        l.setStyle("-fx-text-fill: #e0e0ff; -fx-font-size: 13px;");
+    private Label styledLabel(String t) {
+        Label l = new Label(t);
+        l.setStyle("-fx-text-fill: #e0e0ff;");
         return l;
     }
 
     private void showAlert(String msg) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setTitle("Aviso");
+        alert.setHeaderText(null);
         alert.setContentText(msg);
         alert.showAndWait();
     }
 
-    public static void main(String[] args) {
-        launch(args);
-    }
+    public static void main(String[] args) { launch(args); }
 }
